@@ -1,9 +1,17 @@
 // api/dnsresolver.js
 import { Resolver } from 'dns';
 import { promisify } from 'util';
-import { refererCheck } from '../common/referer-check.js';
+import { fetchUpstream } from '../common/fetch-with-timeout.js';
+import logger from '../common/logger.js';
 
-// 普通 DNS 服务器列表
+// Bound each upstream lookup so the slowest server doesn't pin the
+// overall response. 3s for UDP DNS (`Resolver` rejects on first
+// timeout because `tries: 1`); 5s for DoH via fetchUpstream's per-call
+// override.
+const DNS_TIMEOUT_MS = 3000;
+const DOH_TIMEOUT_MS = 5000;
+
+// Normal DNS server list
 const dnsServers = {
     'Google': '8.8.8.8',
     'Cloudflare': '1.1.1.1',
@@ -18,7 +26,7 @@ const dnsServers = {
     'China Unicom': '123.123.123.123',
 };
 
-// DNS-over-HTTPS 服务列表
+// DNS-over-HTTPS server list
 const dohServers = {
     'Google': 'https://dns.google/resolve?',
     'Cloudflare': 'https://cloudflare-dns.com/dns-query?ct=application/dns-json&',
@@ -27,7 +35,7 @@ const dohServers = {
 };
 
 const resolveDns = async (hostname, type, name, server) => {
-    const resolver = new Resolver();
+    const resolver = new Resolver({ timeout: DNS_TIMEOUT_MS, tries: 1 });
     resolver.setServers([server]);
     const resolve4Async = promisify(resolver.resolve4.bind(resolver));
     const resolve6Async = promisify(resolver.resolve6.bind(resolver));
@@ -38,7 +46,7 @@ const resolveDns = async (hostname, type, name, server) => {
     try {
         let addresses;
 
-        // 根据传入的 type 参数选择不同的解析方法
+        // Select different parsing methods based on the type parameter
         switch (type) {
             case 'A':
                 addresses = await resolve4Async(hostname);
@@ -48,7 +56,7 @@ const resolveDns = async (hostname, type, name, server) => {
                 break;
             case 'TXT':
                 addresses = await resolveTxtAsync(hostname);
-                // TXT 记录解析的结果是一个二维数组，这里进行扁平化处理
+                // TXT record parsing results is a two-dimensional array, here we flatten the result
                 addresses = addresses.flat();
                 break;
             case 'CNAME':
@@ -72,14 +80,18 @@ const resolveDns = async (hostname, type, name, server) => {
 
         return { [name]: addresses };
     } catch (error) {
-        console.log(error.message);
+        // Per-server timeouts are expected (some DNS hosts are unreachable
+        // from a given network); demote to debug so they don't spam the
+        // terminal during normal operation.
+        logger.debug({ err: error, server: name }, 'DNS resolver: lookup failed, returning N/A');
         return { [name]: `N/A` };
     }
 };
 
 const resolveDoh = async (hostname, type, name, url) => {
     try {
-        const response = await fetch(`${url}name=${hostname}&type=${type}`, {
+        const response = await fetchUpstream(`${url}name=${hostname}&type=${type}`, {
+            timeoutMs: DOH_TIMEOUT_MS,
             headers: { 'Accept': 'application/dns-json' }
         });
         const data = await response.json();
@@ -89,22 +101,17 @@ const resolveDoh = async (hostname, type, name, url) => {
         }
         return { [name]: addresses };
     } catch (error) {
-        console.log(error.message);
+        logger.debug({ err: error, server: name }, 'DoH resolver: lookup failed, returning N/A');
         return { [name]: `N/A` };
     }
 };
 
 const dnsResolver = async (req, res) => {
 
-    // 限制请求方法
+    // Limit request method — defensive; app.get() in backend-server.js already gates method,
+    // but a dedicated smoke test asserts this 405 branch directly against the handler.
     if (req.method !== 'GET') {
         return res.status(405).json({ message: 'Method Not Allowed' });
-    }
-
-    // 限制只能从指定域名访问
-    const referer = req.headers.referer;
-    if (!refererCheck(referer)) {
-        return res.status(403).json({ error: referer ? 'Access denied' : 'What are you doing?' });
     }
 
     const { hostname, type } = req.query;
@@ -125,7 +132,7 @@ const dnsResolver = async (req, res) => {
     const dohPromises = Object.entries(dohServers).map(([name, url]) => resolveDoh(hostname, type, name, url));
 
     try {
-        // 并行执行所有 DNS 和 DoH 查询
+        // Execute all DNS and DoH queries in parallel
 
         const result_dns = await Promise.all(dnsPromises);
         const result_doh = await Promise.all(dohPromises);

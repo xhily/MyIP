@@ -1,12 +1,12 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
-import { Offcanvas } from 'bootstrap';
 import { useMainStore } from '@/store';
 
-// 路由组件的懒加载
+// Lazy loading of route components
 const MTRTest = () => import('../components/advanced-tools/MtrTest.vue');
 const PingTest = () => import('../components/advanced-tools/GlobalLatencyTest.vue');
 const RuleTest = () => import('../components/advanced-tools/RuleTest.vue');
 const DNSResolver = () => import('../components/advanced-tools/DnsResolver.vue');
+const EnhancedDnsLeakTest = () => import('../components/advanced-tools/EnhancedDnsLeakTest.vue');
 const CensorshipCheck = () => import('../components/advanced-tools/CensorshipCheck.vue');
 const Whois = () => import('../components/advanced-tools/Whois.vue');
 const InvisibilityTest = () => import('../components/advanced-tools/InvisibilityTest.vue');
@@ -21,6 +21,7 @@ const routes = [
   { path: '/mtrtest', component: MTRTest },
   { path: '/ruletest', component: RuleTest },
   { path: '/dnsresolver', component: DNSResolver },
+  { path: '/enhanceddnsleaktest', component: EnhancedDnsLeakTest },
   { path: '/censorshipcheck', component: CensorshipCheck },
   { path: '/whois', component: Whois },
   { path: '/macchecker', component: MacChecker },
@@ -42,26 +43,23 @@ const setOpenedCard = (currentPath) => {
   }
 };
 
-// 检查是否为需要触发 offcanvas 的路由
-router.afterEach((to, from) => {
-  // 如果 to.path 不匹配 routes，隐藏可能存在的 offcanvas
+router.afterEach((to) => {
+  const store = useMainStore();
+
+
   if (!routes.find(route => route.path === to.path)) {
-    const offcanvasElement = document.getElementById('offcanvasTools');
-    if (offcanvasElement) {
-      const bsOffcanvas = Offcanvas.getInstance(offcanvasElement);
-      bsOffcanvas.hide();
+    if (store.openSheet === 'tools') {
+      store.setOpenSheet(null);
     }
     return;
   }
 
-  const store = useMainStore();
   store.setCurrentPath(to.path, setOpenedCard(to.path));
+
   if (to.path !== '/') {
-    const offcanvasElement = document.getElementById('offcanvasTools');
-    if (offcanvasElement) {
-      const bsOffcanvas = new Offcanvas(offcanvasElement);
-      bsOffcanvas.show();
-    }
+    store.setOpenSheet('tools');
+  } else if (store.openSheet === 'tools') {
+    store.setOpenSheet(null);
   }
 });
 

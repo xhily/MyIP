@@ -1,14 +1,15 @@
 import { createI18n } from 'vue-i18n';
 
 // 引入语言文件
-import en from './en.json';
-import zh from './zh.json';
-import fr from './fr.json';
-import tr from './tr.json';
-import enSecurity from './security-checklist/en.json';
-import zhSecurity from './security-checklist/zh.json';
-import frSecurity from './security-checklist/fr.json';
-import trSecurity from './security-checklist/tr.json';
+// Node ESM 必须显式声明 JSON 导入属性；Vite 也支持这种写法，前后端一致
+import en from './en.json' with { type: 'json' };
+import zh from './zh.json' with { type: 'json' };
+import fr from './fr.json' with { type: 'json' };
+import tr from './tr.json' with { type: 'json' };
+import enSecurity from './security-checklist/en.json' with { type: 'json' };
+import zhSecurity from './security-checklist/zh.json' with { type: 'json' };
+import frSecurity from './security-checklist/fr.json' with { type: 'json' };
+import trSecurity from './security-checklist/tr.json' with { type: 'json' };
 
 
 const messages = { en, zh, fr, tr };
@@ -25,7 +26,10 @@ function mergeMessagesSync() {
 // 设置语言
 function setLanguage() {
   let locale = 'en';
-  let storedPreferences = localStorage.getItem('userPreferences');
+  // Keep in sync with PREFS_STORAGE_KEY in frontend/store.js — both must read
+  // from the same versioned key so an old value doesn't mislead the i18n
+  // initialization into a previously-chosen language after we bumped defaults.
+  let storedPreferences = localStorage.getItem('userPreferences_v6');
   storedPreferences = storedPreferences ? JSON.parse(storedPreferences) : {};
   if (supportedLanguages.includes(storedPreferences.lang)) {
     locale = storedPreferences.lang;

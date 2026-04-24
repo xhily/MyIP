@@ -1,78 +1,62 @@
 <template>
-    <div class="toast-container  p-3 jn-toast">
-        <div id="toastInfoMask" class="toast" :class="{ 'dark-mode': isDarkMode }" role="alert" ref="toastEl"
-            aria-live="assertive" aria-atomic="true">
-            <div class="toast-header" :class="{ 'dark-mode-title': isDarkMode }">
-                <strong class="me-auto" :class="alert.alertStyle">{{ alert.alertTitle }}</strong>
-                <button type="button" class="btn-close" :class="{ 'dark-mode-close-button': isDarkMode }"
-                    data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-            <div class="toast-body">
-                {{ alert.alertMessage }}
-            </div>
-        </div>
-    </div>
+    <!-- Toasts sit in the bottom-right corner (wrapper default) but *to the
+         left* of the FAB column — stacked above them would vary with screen
+         height, and only-offset-from-bottom wouldn't track the FAB column's
+         shift on wide screens. The CSS rule below handles both. -->
+    <Sonner />
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted } from 'vue';
+import { computed, watch } from 'vue';
 import { useMainStore } from '@/store';
-import { Toast } from 'bootstrap';
+import { Sonner, toast } from '@/components/ui/sonner';
 
 const store = useMainStore();
-const isDarkMode = computed(() => store.isDarkMode);
 const alert = computed(() => store.alert);
 
-const toastEl = ref(null);
+// Map old alertStyle (Bootstrap text-* class names) to sonner methods
+const STYLE_TO_TOAST = {
+    'text-success': toast.success,
+    'text-warning': toast.warning,
+    'text-danger': toast.error,
+    'text-info': toast.info,
+};
 
-// 监听 Pinia store 中的 alert 变化
 watch(alert, (newVal) => {
-    if (newVal.alertToShow) {
-        showToast();
+    if (!newVal || !newVal.alertToShow) {
+        return;
     }
-}, { immediate: true, deep: true });
-
-// 显示 Toast
-const showToast = () => {
-    let duration = alert.value.alertDuration || 2000;
-    if (toastEl.value) {
-        const toastInfoMask = new Toast(toastEl.value, {
-            delay: duration
-        });
-        toastInfoMask.show();
-    } else {
-        console.error("Toast element not found");
-    }
-}
-
-const adjustButtonPosition = () => {
-    const screenWidth = window.innerWidth;
-    const contentWidth = 1600; // 主内容区域的宽度
-    const spaceOnRight = (screenWidth - contentWidth) / 2;
-
-    const button = document.querySelector('.jn-toast');
-    if (screenWidth > 1600) { // 只在屏幕宽度大于1600px时调整
-        button.style.right = `${spaceOnRight + 0}px`; // 保持20px的距离
-    } else {
-        button.style.right = '0'; // 在小屏幕上使用默认位置
-    }
-}
-
-onMounted(() => {
-    window.addEventListener('resize', adjustButtonPosition);
-    adjustButtonPosition();
-});
-
+    const fn = STYLE_TO_TOAST[newVal.alertStyle] || toast.message;
+    fn(newVal.alertTitle, {
+        description: newVal.alertMessage,
+        duration: newVal.alertDuration || 2000,
+    });
+}, { deep: true });
 </script>
 
-<style scoped>
-.jn-toast {
-    position: fixed;
-    z-index: 10001;
-    right: 0;
-    bottom: 0;
-    margin-bottom: 2pt;
-    margin-right: 40pt;
-    max-width: 80vw;
+<!--
+  Global (unscoped) because sonner renders its own root to document.body,
+  so scoped styles wouldn't reach it.
+
+  Positioning goal: Toast lives to the LEFT of the FAB column on every
+  screen size, not above it. The FAB column (InfoMask + QueryIP) sits at
+  20px from the content-area's right edge (content area is max-width
+  1600px, centered) and is 36px wide, so the left edge of the FAB column
+  is at "content-edge + 20 + 36 = content-edge + 56" from viewport right.
+  We push toasts another 10px beyond that, giving a clean 10px gap.
+
+    right-offset = max(0, (viewport - 1600) / 2)   ← tracks content edge
+                 + 66                               ← 20 + 36 + 10 gap
+
+  On narrow screens `(viewport - 1600) / 2` goes negative and max() clamps
+  it to 0, collapsing to a flat 66px — just the FAB width + gap from the
+  viewport edge.
+
+  If the FAB dimensions change (different button size, 3rd FAB added, or
+  the content-max-width constant moves off 1600px), revisit these numbers.
+-->
+<style>
+[data-sonner-toaster] {
+    right: calc(max(0px, (100vw - 1600px) / 2) + 66px) !important;
 }
 </style>
